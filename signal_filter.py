@@ -17,6 +17,25 @@ except ImportError:
     logger.warning("yfinance not installed - filters disabled")
 
 
+# ---------------------------------------------------------------------------
+# Signal Intelligence — live logging
+# ---------------------------------------------------------------------------
+def log_signal_intelligence(scan_date, scanner, ticker, direction, fired,
+                             signal_strength=None, signal_bucket=None,
+                             regime_filter_passed=None, regime_value=None,
+                             score=None):
+    try:
+        import sqlite3 as _sl
+        db = os.path.expanduser('~/signal_intelligence.db')
+        c = _sl.connect(db)
+        c.execute('CREATE TABLE IF NOT EXISTS signal_log (id INTEGER PRIMARY KEY AUTOINCREMENT, scan_date TEXT, scanner TEXT, ticker TEXT, direction TEXT, fired INTEGER, signal_strength REAL, signal_bucket TEXT, regime_filter_passed INTEGER, regime_value REAL, score INTEGER, autotrader_acted INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP)')
+        c.execute('INSERT INTO signal_log (scan_date,scanner,ticker,direction,fired,signal_strength,signal_bucket,regime_filter_passed,regime_value,score) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                  (scan_date,scanner,ticker,direction,fired,signal_strength,signal_bucket,regime_filter_passed,regime_value,score))
+        c.commit(); c.close()
+    except Exception:
+        pass
+
+
 class SignalFilter:
     def __init__(self, filters_cfg, scoring_cfg, form4_db=None):
         self.filters = filters_cfg
@@ -124,6 +143,13 @@ class SignalFilter:
                 score += self.scoring.get('insider_sell_bonus', 2)
                 f['notes'] += f" | INSIDER SELLS: {ins['count']} txns ${ins['value']:,.0f}"
             f['signal_score'] = score
+            # Log to signal intelligence
+            _scan_date = f.get('filing_date') or f.get('scan_date', '')
+            log_signal_intelligence(_scan_date, '8K_1.01', t, 'SHORT',
+                                    1 if passed and score >= 2 else 0,
+                                    signal_strength=float(score) if score else None,
+                                    signal_bucket=str(score) if score else None,
+                                    score=score if passed else None)
             results.append(f)
             logger.info(f"  {t}: ${s['price']} {s['sector']} score={score} pass={passed}")
         return results
